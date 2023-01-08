@@ -1,21 +1,45 @@
+const { ApolloServer } = require("apollo-server-express")
+const jwt = require('jsonwebtoken');
+
+// set token secret and expiration date
+const secret = 'mysecretsshhhhh';
+
 const express = require('express');
-const path = require('path');
+// const path = require('path');
 const db = require('./config/connection');
-const routes = require('./routes');
+const {typeDefs} = require('./schemas')
+const {resolvers} = require('./schemas');
+const { User } = require("./models");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
 
-// if we're in production, serve client/build as static assets
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../client/build')));
+let apolloServer = null;
+async function startServer() {
+  apolloServer = new ApolloServer({
+    introspection: true,
+    typeDefs,
+    resolvers,
+    context: async({ req }) => {
+      let token = req.query.token || req.headers.authorization;
+      if (req.headers.authorization) {
+        token = token.split(' ').pop().trim();
+      } else {
+        return {user: null}
+      }
+      const {data} = jwt.verify(token, secret)
+      const user = await User.findById(data._id)
+      return {user};
+    }
+  });
+  await apolloServer.start();
+  apolloServer.applyMiddleware({app, path: "/graphql"})
 }
 
-app.use(routes);
+startServer();
 
-db.once('open', () => {
-  app.listen(PORT, () => console.log(`🌍 Now listening on localhost:${PORT}`));
-});
+app.listen(PORT, () => {
+  console.log(`🌍 Now listening on localhost:${PORT}`);
+})
